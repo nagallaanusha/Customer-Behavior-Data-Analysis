@@ -12,65 +12,73 @@ where discount_applied = 'Yes' and purchase_amount >= (select AVG(purchase_amoun
 
 
 -- Q3. Which are the top 5 products with the highest average review rating?
-select item_purchased, round(avg(review_rating::numeric),2) as "Average Product Rating"
-from customer
-group by item_purchased
-order by avg(review_rating) desc
-limit 5
+SELECT TOP 5 
+item_purchased,
+CAST(ROUND(AVG(review_rating * 1.0), 2) AS DECIMAL(10,2))-- Multiply by 1.0 to make sure SQL treats the value as decimal and gives a proper average.
+AS [Average Product Rating]
+FROM customer
+GROUP BY item_purchased
+ORDER BY AVG(review_rating * 1.0) DESC;
 
 --Q4. Compare the average Purchase Amounts between Standard and Express Shipping. 
-select shipping_type, 
-ROUND(AVG(purchase_amount),2)
+select shipping_type,
+cast(round(avg(purchase_amount *1.0), 2) as decimal(10,2)) as shipping_type_amount
 from customer
-where shipping_type in ('Standard','Express')
-group by shipping_type;
+where shipping_type in('Standard', 'Express')
+group by shipping_type
 
 --Q5. Do subscribed customers spend more? Compare average spend and total revenue 
 --between subscribers and non-subscribers.
-SELECT subscription_status,
-       COUNT(customer_id) AS total_customers,
-       ROUND(AVG(purchase_amount),2) AS avg_spend,
-       ROUND(SUM(purchase_amount),2) AS total_revenue
-FROM customer
-GROUP BY subscription_status
-ORDER BY total_revenue,avg_spend DESC;
+select subscription_status,
+CAST(round(avg(purchase_amount *1.0),2) as decimal(10,2)) as avg_spend,
+CAST(round(sum(purchase_amount *1.0),2) as decimal(10,2)) as total_revenue,
+count(customer_id) as total_customers
+from customer
+group by subscription_status
+order by total_revenue,avg_spend desc;
 
 --Q6. Which 5 products have the highest percentage of purchases with discounts applied?
-SELECT item_purchased,
-       ROUND(100.0 * SUM(CASE WHEN discount_applied = 'Yes' THEN 1 ELSE 0 END)/COUNT(*),2) AS discount_rate
-FROM customer
-GROUP BY item_purchased
-ORDER BY discount_rate DESC
-LIMIT 5;
+select top 5 item_purchased,
+cast(
+--Counts how many times discount was used per product.
+(sum(case when discount_applied ='Yes' then 1 else 0 end)*100.0/count(*)) as decimal(5,2)) as discount_percentage
+from customer
+group by item_purchased
+order by discount_percentage desc;
 
 
 --Q7. Segment customers into New, Returning, and Loyal based on their total 
 -- number of previous purchases, and show the count of each segment. 
-with customer_type as (
-SELECT customer_id, previous_purchases,
-CASE 
-    WHEN previous_purchases = 1 THEN 'New'
-    WHEN previous_purchases BETWEEN 2 AND 10 THEN 'Returning'
-    ELSE 'Loyal'
-    END AS customer_segment
-FROM customer)
-
-select customer_segment,count(*) AS "Number of Customers" 
-from customer_type 
-group by customer_segment;
+select customer_segment,
+count(*) as total_customers
+from(
+select
+case 
+when previous_purchases = 0 then 'New'
+when previous_purchases between 1 and 5 then 'Returning'
+else 'Loyal'
+end as customer_segment
+from customer) as segmented
+group by customer_segment
+order by total_customers desc;
 
 --Q8. What are the top 3 most purchased products within each category? 
-WITH item_counts AS (
+SELECT category,
+       item_purchased,
+       total_purchases
+FROM (
     SELECT category,
            item_purchased,
-           COUNT(customer_id) AS total_orders,
-           ROW_NUMBER() OVER (PARTITION BY category ORDER BY COUNT(customer_id) DESC) AS item_rank
+           COUNT(*) AS total_purchases,
+           ROW_NUMBER() OVER (
+               PARTITION BY category 
+               ORDER BY COUNT(*) DESC
+           ) AS rn
     FROM customer
     GROUP BY category, item_purchased
-)
-SELECT item_rank,category, item_purchased, total_orders
-FROM item_counts
-WHERE item_rank <=3;
+) AS ranked_products
+WHERE rn = 3
+ORDER BY category, total_purchases DESC;
  
 --Q9. Are customers who are repeat buyers (more than 5 previous purchases) also likely to subscribe?
 SELECT subscription_status,
@@ -86,4 +94,20 @@ SELECT
 FROM customer
 GROUP BY age_group
 ORDER BY total_revenue desc;
+--Q11. Which shipping type generates highest total revenue? 
+
+select top 1 shipping_type,
+cast(sum(purchase_amount * 1.0) as decimal(10,2)) as total_revenue
+from customer
+group by shipping_type
+order by total_revenue desc;
+
+--Q12. What is the average purchase amount for subscribed vs non subscribed customers?
+
+select subscription_status,
+cast(avg(purchase_amount * 1.0) as decimal(10,2)) as average_spend
+from customer
+group by subscription_status;
+
+
 
